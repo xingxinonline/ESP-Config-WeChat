@@ -263,6 +263,34 @@ Page({
       }
     })
   },
+  //获取设备自定义ID
+  getCustomId: function (deviceId, serviceId, characteristicId, data) {
+    var self = this, obj = {}, frameControl = 0;
+    app.data.sequenceControl = parseInt(app.data.sequenceControl) + 1;
+    if (!util._isEmpty(data)) {
+      obj = util.isSubcontractor(data, self.data.isChecksum, sequenceControl, self.data.isEncrypt);
+      frameControl = util.getFrameCTRLValue(self.data.isEncrypt, self.data.isChecksum, util.DIRECTION_OUTPUT, false, obj.flag);
+    } else {
+      obj = util.isSubcontractor([0xFF, 0xA1], self.data.isChecksum, app.data.sequenceControl, self.data.isEncrypt);
+      frameControl = util.getFrameCTRLValue(self.data.isEncrypt, self.data.isChecksum, util.DIRECTION_OUTPUT, false, obj.flag);
+    }
+      // var defaultData = util.encrypt(app.data.sequenceControl, obj.lenData, true);
+    var value = util.writeData(util.PACKAGE_VALUE, util.SUBTYPE_CUSTOM_DATA, frameControl, app.data.sequenceControl, obj.len, obj.lenData);
+    var typedArray = new Uint8Array(value)
+    wx.writeBLECharacteristicValue({
+      deviceId: deviceId,
+      serviceId: serviceId,
+      characteristicId: characteristicId,
+      value: typedArray.buffer,
+      success: function (res) {
+        if (obj.flag) {
+          getCustomId(deviceId, serviceId, characteristicId, obj.laveData);
+        }
+      },
+      fail: function (res) {
+      }
+    })
+  },
   getWifiList: function (deviceId, serviceId, characteristicId) {
     var self = this;
     var frameControl = util.getFrameCTRLValue(false, false, util.DIRECTION_OUTPUT, false, false);
@@ -300,6 +328,7 @@ Page({
         //通知设备交互方式（是否加密）
         // self.notifyDevice(deviceId, serviceId, characteristicId);
         self.onNotify();
+        self.getCustomId(deviceId, serviceId, characteristicId, null);
         self.getWifiList(deviceId, serviceId, characteristicId);
       },
       fail: function (res) {
@@ -310,12 +339,19 @@ Page({
   analysisWifi: function (list) {
     const self = this;
     var fragList = self.data.fragList;
-    if (list.length < 4) {
+    // 校验数据包最小长度
+    if (!Array.isArray(list) || list.length < 4) {
+      console.error("无效数据包:", list);
       return false;
     }
-    var val = list[0],
-      type = val & 3,
-      subType = val >> 2;
+    var val_int = parseInt(list[0], 16),
+      type = val_int & 3, 
+      subType = val_int >> 2; 
+    console.log(
+      `[DEBUG] 帧头解析:`,
+      `Type=${type}(${type === 1 ? '数据帧' : '控制帧'}),`,
+      `SubType=0x${subType.toString(16).padStart(2, '0')},`,
+    );
     if (type != parseInt(util.PACKAGE_VALUE)) {
       wx.hideLoading();
       return false;
@@ -353,7 +389,15 @@ Page({
         self.setData({
           fragList: [],
         })
-      } else {
+      } else if (subType == util.SUBTYPE_CUSTOM_DATA) {
+        // 处理自定义数据
+        const customDataBytes = self.data.fragList.map(b => parseInt(b, 16));
+        console.log('原始字节:', customDataBytes);
+        // 如果前两个字节是0xFF，0xA1则是设备自定义ID + 36字节标准的 UUID 字符串
+        self.setData({
+          fragList: [],
+        })
+        }else {
         wx.hideLoading();
       }
       self.setData({
