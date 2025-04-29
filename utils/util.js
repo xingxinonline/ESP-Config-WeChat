@@ -97,7 +97,7 @@ const filterDevice = (devices, name) => {
   var list = [];
   for (var i = 0; i < devices.length; i++) {
     var device = devices[i];
-    var re = new RegExp("^(BLUFI)");
+    var re = new RegExp("^(LanDouBao)");
     if (re.test(device[name])) {
       list.push(device);
     }
